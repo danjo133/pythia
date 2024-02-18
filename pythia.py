@@ -83,6 +83,11 @@ class GPT(cmd.Cmd):
 
     prompt = None
     console = Console()
+    
+    # If true, the user can input multiple lines before sending.
+    send_disabled = False
+    lock_line = False
+    temp_line = ""
 
     client = None
 
@@ -127,7 +132,7 @@ class GPT(cmd.Cmd):
         image_url = response.data[0].url
         print(image_url)
 
-        r = requests.get(image_url, allow_redirects=True)
+        r = requests.get(image_url, allow_redirects=True, timeout=20)
         with open('image.png', 'wb') as f:
             f.write(r.content)
 
@@ -183,12 +188,27 @@ class GPT(cmd.Cmd):
             readline.write_history_file(self.histfile)
 
     def default(self, line):
-        self.db.add_line(line)
-        self.do__send("")
+        if self.lock_line:
+            self.temp_line += line + "\n"
+        else:
+            self.db.add_line(line)
+            if not self.send_disabled:
+                self.do__send("")
+            else:
+                self.do__list_current("")
 
     def do_exit(self, _):
         print("Exiting..")
         return True
+
+    def do__disable_send(self, _):
+        self.send_disabled = not self.send_disabled
+    
+    def do__lock_line(self, _):
+        if len(self.temp_line) > 0:
+            self.db.add_line(self.temp_line)
+            self.temp_line = ""
+        self.lock_line = not self.lock_line
 
     def do__send(self, _):
         lines = self.db.get_pretty_lines()
@@ -270,6 +290,7 @@ class GPT(cmd.Cmd):
         with open(line, "r") as f:
             file_content = f.read()
             self.db.add_line(file_content)
+            self.console.print(file_content)
 
     def do__store_conversation(self, filename):
         with open(filename, "w") as f:
@@ -322,6 +343,8 @@ class GPT(cmd.Cmd):
         print("_clear_topic    <topic>   - clears topic")
         print("_clear_system             - clears system config")
         print("_clear_assistant          - clears assistant config")
+        print("_disable_send             - disables sending after each line for composing multiline messages")
+        print("_lock_line               - don't create a new line on enter allowing to paste multiline for example")
         print("_add_line       <line>    - add line to context")
         print("_add_system     <line>    - add line to system config")
         print("_add_assistant  <line>    - add line to assistant config")
