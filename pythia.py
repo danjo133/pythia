@@ -113,8 +113,16 @@ class GPT(cmd.Cmd):
             self.client = groq.Client(api_key=api_key)
 
         if query:
+            self.intro = None
             self.do__add_line(query)
             self.do__send("")
+
+    def add_file(self, line):
+        with open(line, "r") as f:
+            file_content = f.read()
+            self.db.add_line(file_content)
+            self.console.print(file_content)
+
 
     def make_request(self, system_lines, assistant_lines, lines, model="gpt-4"):
         messages = []
@@ -294,10 +302,7 @@ class GPT(cmd.Cmd):
             print(idx,":", line)
 
     def do__add_file(self, line):
-        with open(line, "r") as f:
-            file_content = f.read()
-            self.db.add_line(file_content)
-            self.console.print(file_content)
+        self.add_file(line)
 
     def do__store_conversation(self, filename):
         with open(filename, "w") as f:
@@ -370,14 +375,56 @@ class GPT(cmd.Cmd):
         print("_get_model                - get current gpt model")
 
 
+
+def run_webserver(gpt, host="0.0.0.0", port=5000):
+    # start webserver
+    from flask import Flask, request
+    app = Flask(__name__)
+
+    @app.route('/help')
+    @app.route('/cheat')
+    def print_cheat():
+        cheat = """curl -X POST -H "content-type: application/x-www-form-urlencoded" -d "query=Create a python script for google searches" http://localhost:5000/ask
+        curl -F"file=@LICENSE" http://localhost:5000/add_file
+        """
+        return cheat
+    @app.route('/ask', methods=['POST'])
+    def ask():
+        line = request.form['query']
+        gpt.do__add_line(line)
+        response = gpt.make_request(
+            gpt.db.get_system(),
+            gpt.db.get_assistant(),
+            gpt.db.get_pretty_lines(),
+            gpt.model)
+        gpt.db.add_response(response)
+        return response
+    @app.route('/add_file', methods=['POST'])
+    def add_file():
+        file = request.files['file']
+        filename = file.filename
+        lines = file.stream.readlines()
+        query_line = f"{filename}:\n" + "".join([line.decode("utf-8") for line in lines])
+        gpt.do__add_line(query_line)
+        return "file added"
+
+    @app.route('/')
+    def hello_world():
+        return 'Hello, World!'
+    app.run(host=host,port=port)
+
+
 if __name__ == '__main__':
     # Parse arguments with argparse, if the program is called with the flag --query, run the query and exit
     parser = argparse.ArgumentParser(description='Pythia answers your questions')
-    parser.add_argument('--query', help='Query to initialize the dialogue with', required=False)
-    parser.add_argument('--api', help='API to use, supported: OpenAI, Groq. default is OpenAI', required=False,default="OpenAI")
-    parser.add_argument('--model', help='Model to use, suggested: gpt-3.5-turbo gpt-4 gpt-4-32k gpt-4-1106-preview, llama3-8b-8192, llama3-70b-8192 ', required=False)
-    parser.add_argument('--debug', help='Debug mode', required=False, action='store_true')
-    parser.add_argument('--base-url', help='Run against different llm, for example: http://127.0.0.1:1234/v1 to run against localhost', required=False)
+    parser.add_argument('--query', '-q', help='Query to initialize the dialogue with', required=False)
+    parser.add_argument('--file', '-f', help='Add file before query', required=False)
+    parser.add_argument('--oneshot','-o', help='Run a single query and exit', required=False, action='store_true')
+    parser.add_argument('--api', '-a', help='API to use, supported: OpenAI, Groq. default is OpenAI', required=False,default="OpenAI")
+    parser.add_argument('--model', '-m', help='Model to use, suggested: gpt-3.5-turbo gpt-4 gpt-4-32k gpt-4-1106-preview, llama3-8b-8192, llama3-70b-8192 ', required=False)
+    parser.add_argument('--debug', '-d', help='Debug mode', required=False, action='store_true')
+    parser.add_argument('--base-url', '-b', help='Run against different llm, for example: http://127.0.0.1:1234/v1 to run against localhost', required=False)
+    parser.add_argument('--webserver', '-w', help='Start webserver', required=False, action='store_true')
   
     args = parser.parse_args()
 
@@ -391,6 +438,15 @@ if __name__ == '__main__':
         print(args)
 
     try:
-        GPT(query=args.query, model=args.model,base_url=args.base_url, api=args.api).cmdloop()
+        if args.oneshot:
+            gpt = GPT(model=args.model,base_url=args.base_url, api=args.api)
+            if args.file:
+                gpt.do__add_file(args.file)
+            gpt.default(args.query)
+        elif args.webserver:
+            gpt = GPT(model=args.model,base_url=args.base_url, api=args.api)
+            run_webserver(gpt=gpt)
+        else:
+            GPT(query=args.query, model=args.model,base_url=args.base_url, api=args.api).cmdloop()
     except KeyboardInterrupt:
         print("\nExiting..")
