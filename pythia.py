@@ -2,6 +2,7 @@
 
 import cmd
 from openai import OpenAI
+import groq
 
 import os
 import readline
@@ -79,7 +80,8 @@ class GPT(cmd.Cmd):
     db = DB()
     intro = "PythiaGPT - Ask me anything!\n"
 
-    model="gpt-4-1106-preview"
+    model= None
+    api = None
 
     prompt = None
     console = Console()
@@ -94,16 +96,21 @@ class GPT(cmd.Cmd):
     histfile = '.gpt_chat_history'
     histfile_size = 1000
 
-    def __init__(self, query=None, model=None, base_url=None):
+    def __init__(self, query=None, model="gpt-4-1106-preview", base_url=None, api="OpenAI"):
         super().__init__()
         if model:
             self.model = model
+        self.api = api
 
-        self.prompt = self.model.upper() + " > "
-        if base_url:
-            self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=base_url)
-        else:
-            self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.prompt = f"{self.model.upper()}[{self.api}] > "
+        if self.api == "OpenAI":
+            if base_url:
+                self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=base_url)
+            else:
+                self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        if self.api == "Groq":
+            api_key=os.getenv("GROQ_API_KEY")
+            self.client = groq.Client(api_key=api_key)
 
         if query:
             self.do__add_line(query)
@@ -367,7 +374,8 @@ if __name__ == '__main__':
     # Parse arguments with argparse, if the program is called with the flag --query, run the query and exit
     parser = argparse.ArgumentParser(description='Pythia answers your questions')
     parser.add_argument('--query', help='Query to initialize the dialogue with', required=False)
-    parser.add_argument('--model', help='Model to use, suggested: gpt-3.5-turbo gpt-4 gpt-4-32k gpt-4-1106-preview', required=False)
+    parser.add_argument('--api', help='API to use, supported: OpenAI, Groq. default is OpenAI', required=False,default="OpenAI")
+    parser.add_argument('--model', help='Model to use, suggested: gpt-3.5-turbo gpt-4 gpt-4-32k gpt-4-1106-preview, llama3-8b-8192, llama3-70b-8192 ', required=False)
     parser.add_argument('--debug', help='Debug mode', required=False, action='store_true')
     parser.add_argument('--base-url', help='Run against different llm, for example: http://127.0.0.1:1234/v1 to run against localhost', required=False)
   
@@ -383,6 +391,6 @@ if __name__ == '__main__':
         print(args)
 
     try:
-        GPT(query=args.query, model=args.model,base_url=args.base_url).cmdloop()
+        GPT(query=args.query, model=args.model,base_url=args.base_url, api=args.api).cmdloop()
     except KeyboardInterrupt:
         print("\nExiting..")
