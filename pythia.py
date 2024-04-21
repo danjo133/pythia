@@ -381,7 +381,7 @@ class GPT(cmd.Cmd):
 
 
 
-def run_webserver(gpt, host="0.0.0.0", port=5000):
+def run_webserver(gpt, host="127.0.0.1", port=5000):
     # start webserver
     from flask import Flask, request
     app = Flask(__name__)
@@ -467,6 +467,8 @@ if __name__ == '__main__':
     parser.add_argument('--debug', '-d', help='Debug mode', required=False, action='store_true')
     parser.add_argument('--base-url', '-b', help='Run against different llm, for example: http://127.0.0.1:1234/v1 to run against localhost', required=False)
     parser.add_argument('--webserver', '-w', help='Start webserver', required=False, action='store_true')
+    parser.add_argument('--host', help='Host/ip to bind webserver on', required=False, default="127.0.0.1")
+    parser.add_argument('--port', help='Port to run the webserver on', required=False, default=5000)
   
     args = parser.parse_args()
 
@@ -487,7 +489,7 @@ if __name__ == '__main__':
             gpt.default(args.query)
         elif args.webserver:
             gpt = GPT(model=args.model,base_url=args.base_url, api=args.api)
-            run_webserver(gpt=gpt)
+            run_webserver(gpt=gpt, host=args.host, port=args.port)
         else:
             GPT(query=args.query, model=args.model,base_url=args.base_url, api=args.api).cmdloop()
     except KeyboardInterrupt:
