@@ -11,9 +11,14 @@ from rich.markdown import Markdown
 import requests
 import base64
 import argparse
+import re
 
 from dotenv import load_dotenv
 load_dotenv()
+
+# Create regex to match domain names
+domain_regex = re.compile(r"^([\da-z\.-]+)$")
+port_regex = re.compile(r"^(\d+)$")
 
 class DB():
     stored = {}
@@ -384,14 +389,44 @@ def run_webserver(gpt, host="0.0.0.0", port=5000):
     @app.route('/help')
     @app.route('/cheat')
     def print_cheat():
-        cheat = """curl -X POST -H "content-type: application/x-www-form-urlencoded" -d "query=Create a python script for google searches" http://localhost:5000/ask
-        curl -F"file=@LICENSE" http://localhost:5000/add_file
-        """
+        cheat = """
+# ask a question
+curl -X POST -H "content-type: application/x-www-form-urlencoded" -d "query=Create a python script for google searches" http://localhost:5000/ask
+# add a file
+curl -F"file=@LICENSE" http://localhost:5000/add_file
+# clear current conversation
+curl -X POST http://localhost:5000/clear
+# set nice aliases
+eval $(curl localhost:5000/alias?hostname=localhost)
+"""
         return cheat
+    @app.route('/alias')
+    def print_alias():
+        hostname = request.args.get('hostname')
+        port = request.args.get('port')
+        print(hostname)
+        print(port)
+        if not hostname:
+            hostname = "localhost"
+        elif not domain_regex.match(hostname):
+            return "Invalid hostname"
+        if not port:
+            port = 5000
+        elif not port_regex.match(port):
+            return "Invalid port"
+
+        alias = f"""
+ask() {{ curl -X POST -H "content-type: application/x-www-form-urlencoded" -d "query=$*" "http://{hostname}:{port}/ask" ;}};
+add_file() {{ curl -F "file=@$*" "http://{hostname}:{port}/add_file" ;}};
+clear() {{ curl -X POST "http://{hostname}:{port}/clear" ;}}
+"""
+        return alias
+
     @app.route('/ask', methods=['POST'])
     def ask():
-        line = request.form['query']
-        gpt.do__add_line(line)
+        question = request.form['query']
+        print(f"{question=}")
+        gpt.do__add_line(question)
         response = gpt.make_request(
             gpt.db.get_system(),
             gpt.db.get_assistant(),
@@ -399,6 +434,7 @@ def run_webserver(gpt, host="0.0.0.0", port=5000):
             gpt.model)
         gpt.db.add_response(response)
         return response
+
     @app.route('/add_file', methods=['POST'])
     def add_file():
         file = request.files['file']
@@ -408,9 +444,15 @@ def run_webserver(gpt, host="0.0.0.0", port=5000):
         gpt.do__add_line(query_line)
         return "file added"
 
+    @app.route('/clear', methods=['POST'])
+    def clear():
+        gpt.do__clear_current("")
+        return "cleared"
+
     @app.route('/')
     def hello_world():
         return 'Hello, World!'
+
     app.run(host=host,port=port)
 
 
